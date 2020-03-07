@@ -29,6 +29,11 @@
 	<artifactId>spring-cloud-kubernetes-examples</artifactId>
 	<packaging>pom</packaging>
 
+	<properties>
+		<fabric8.maven.plugin.version>4.3.1</fabric8.maven.plugin.version>
+	</properties>
+
+
 	<name>Spring Cloud Kubernetes :: Examples</name>
 	<description>Examples showing how to use features of Spring Cloud Kubernetes.
 	</description>
