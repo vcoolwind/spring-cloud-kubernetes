@@ -53,32 +53,40 @@ public class KubernetesEndpointsServerList extends KubernetesServerList {
 	@Override
 	public List<Server> getUpdatedListOfServers() {
 		List<Server> result = new ArrayList<>();
-		Endpoints endpoints = null;
+		Endpoints endpoints = StringUtils.isNotBlank(this.getNamespace())
+				? this.getClient().endpoints().inNamespace(this.getNamespace())
+						.withName(this.getServiceId()).get()
+				: this.getClient().endpoints().withName(this.getServiceId()).get();
+
 		if (getProperties().getAllNamespaces()) {
-			// get list endpoints across all namespaces and filter by serviceId
-			List<Endpoints> listOfEndpoints = this.getClient().endpoints()
-					.inAnyNamespace().list().getItems().stream()
-					.filter(endpoint -> endpoint.getMetadata().getName()
-							.equals(this.getServiceId()))
-					.collect(Collectors.toList());
-			if (LOG.isDebugEnabled()) {
-				LOG.debug(String.format("Endpoints: %s", listOfEndpoints));
-			}
-			// prevent from the same service ids in different namespaces
-			if (listOfEndpoints.size() > 1) {
+			if (endpoints != null) {
+				// use same namespaces service first
 				LOG.info(String.format(
-						"Communication disabled due to non unique service id [%s] across all namespaces",
-						this.getServiceId()));
-				return null;
+						"found service with same namespaces in ribbon in namespace [%s] for name [%s] and portName [%s]",
+						this.getNamespace(), this.getServiceId(), this.getPortName()));
 			}
-			endpoints = listOfEndpoints.size() > 0 ? listOfEndpoints.get(0) : null;
+			else {
+				// get list endpoints across all namespaces and filter by serviceId
+				List<Endpoints> listOfEndpoints = this.getClient().endpoints()
+						.inAnyNamespace().list().getItems().stream()
+						.filter(endpoint -> endpoint.getMetadata().getName()
+								.equals(this.getServiceId()))
+						.collect(Collectors.toList());
+				if (LOG.isDebugEnabled()) {
+					LOG.debug(String.format("Endpoints: %s", listOfEndpoints));
+				}
+				// prevent from the same service ids in different namespaces
+				if (listOfEndpoints.size() > 1) {
+					LOG.error(String.format(
+							"Communication disabled due to non unique service id [%s] across all namespaces",
+							this.getServiceId()));
+					return null;
+				}
+				endpoints = listOfEndpoints.size() > 0 ? listOfEndpoints.get(0) : null;
+			}
+
 		}
-		else {
-			endpoints = StringUtils.isNotBlank(this.getNamespace())
-					? this.getClient().endpoints().inNamespace(this.getNamespace())
-							.withName(this.getServiceId()).get()
-					: this.getClient().endpoints().withName(this.getServiceId()).get();
-		}
+
 		if (endpoints != null) {
 			if (LOG.isDebugEnabled()) {
 				LOG.debug(String.format(
@@ -108,7 +116,7 @@ public class KubernetesEndpointsServerList extends KubernetesServerList {
 			}
 		}
 		if (result.isEmpty()) {
-			LOG.warn(String.format(
+			LOG.error(String.format(
 					"Did not find any endpoints in ribbon in namespace [%s] for name [%s] and portName [%s]",
 					this.getNamespace(), this.getServiceId(), this.getPortName()));
 		}

@@ -18,6 +18,7 @@ package org.springframework.cloud.kubernetes.ribbon;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.netflix.loadbalancer.Server;
 import io.fabric8.kubernetes.api.model.Service;
@@ -66,10 +67,45 @@ public class KubernetesServicesServerList extends KubernetesServerList {
 				? this.getClient().services().inNamespace(this.getNamespace())
 						.withName(this.getServiceId()).get()
 				: this.getClient().services().withName(this.getServiceId()).get();
+
+		if (getProperties().getAllNamespaces()) {
+			if (service != null) {
+				// use same namespaces service first
+				LOG.info(String.format(
+						"found service with same namespaces in ribbon in namespace [%s] for name [%s] and portName [%s]",
+						this.getNamespace(), this.getServiceId(), this.getPortName()));
+			}
+			else {
+				// find service in all namespaces when the service not found in same
+				// namespaces
+				List<Service> services = this.getClient().services().inAnyNamespace()
+						.list().getItems().stream()
+						.filter(serviceTmp -> serviceTmp.getMetadata().getName()
+								.equals(this.getServiceId()))
+						.collect(Collectors.toList());
+
+				if (LOG.isDebugEnabled()) {
+					LOG.debug(String.format("services: %s", services));
+				}
+				// LOG.info(String.format("services in all namespaces: %s", services));
+				// prevent from the same service ids in different namespaces
+				if (services.size() > 1) {
+					LOG.error(String.format(
+							"Communication disabled due to non unique service id [%s] across all namespaces",
+							this.getServiceId()));
+					return null;
+				}
+				service = services.size() > 0 ? services.get(0) : null;
+			}
+
+		}
+
 		if (service != null) {
 			if (LOG.isDebugEnabled()) {
-				LOG.debug("Found Service[" + service.getMetadata().getName() + "]");
+				LOG.info("Found Service[" + service.getMetadata().getName() + " -- "
+						+ service.getMetadata().getName() + "]");
 			}
+
 			if (service.getSpec().getPorts().size() == 1) {
 				result.add(new Server(this.concatServiceFQDN(service),
 						service.getSpec().getPorts().get(0).getPort()));
@@ -82,13 +118,13 @@ public class KubernetesServicesServerList extends KubernetesServerList {
 								servicePort.getPort()));
 					}
 				}
-
 			}
 		}
 		if (result.isEmpty()) {
-			LOG.warn(String.format(
+			LOG.error(String.format(
 					"Did not find any service in ribbon in namespace [%s] for name [%s] and portName [%s]",
-					this.getNamespace(), this.getServiceId(), this.getPortName()));
+					getProperties().getAllNamespaces() ? "ALL" : this.getNamespace(),
+					this.getServiceId(), this.getPortName()));
 		}
 		return result;
 	}
